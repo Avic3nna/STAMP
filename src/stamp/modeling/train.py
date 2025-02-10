@@ -33,6 +33,9 @@ from stamp.modeling.lightning_model import (
     EncodedTargets,
     LitVisionTransformer,
 )
+from stamp.modeling.lightning_cobra import (
+    LitCobra,
+)
 from stamp.modeling.transforms import VaryPrecisionTransform
 
 __author__ = "Marko van Treeck"
@@ -61,6 +64,10 @@ def train_categorical_model_(
     # Experimental features
     use_vary_precision_transform: bool,
     use_alibi: bool,
+    use_cobra: bool,
+    lr: float,
+    freeze_base: bool,
+    freeze_cobra: bool,
 ) -> None:
     """Trains a model.
 
@@ -130,6 +137,10 @@ def train_categorical_model_(
             else None
         ),
         use_alibi=use_alibi,
+        use_cobra=use_cobra,
+        lr=lr,
+        freeze_base=freeze_base,
+        freeze_cobra=freeze_cobra,
     )
     train_model_(
         output_dir=output_dir,
@@ -145,13 +156,14 @@ def train_categorical_model_(
 def train_model_(
     *,
     output_dir: Path,
-    model: LitVisionTransformer,
+    model: LitVisionTransformer | LitCobra,
     train_dl: DataLoader[tuple[Bags, CoordinatesBatch, BagSizes, EncodedTargets]],
     valid_dl: DataLoader[tuple[Bags, CoordinatesBatch, BagSizes, EncodedTargets]],
     max_epochs: int,
     patience: int,
     accelerator: str | Accelerator,
-) -> LitVisionTransformer:
+    use_cobra: bool,
+) -> LitVisionTransformer | LitCobra:
     """Trains a model.
 
     Returns:
@@ -189,7 +201,10 @@ def train_model_(
     )
     shutil.copy(model_checkpoint.best_model_path, output_dir / "model.ckpt")
 
-    return LitVisionTransformer.load_from_checkpoint(model_checkpoint.best_model_path)
+    if use_cobra:
+        return LitCobra.load_from_checkpoint(model_checkpoint.best_model_path)
+    else:
+        return LitVisionTransformer.load_from_checkpoint(model_checkpoint.best_model_path)
 
 
 def setup_model_for_training(
@@ -201,13 +216,17 @@ def setup_model_for_training(
     num_workers: int,
     train_transform: Callable[[torch.Tensor], torch.Tensor] | None,
     use_alibi: bool,
+    use_cobra: bool,
+    lr: float,
+    freeze_base: bool,
+    freeze_cobra: bool,
     # Metadata, has no effect on model training
     ground_truth_label: PandasLabel,
     clini_table: Path,
     slide_table: Path,
     feature_dir: Path,
 ) -> tuple[
-    LitVisionTransformer,
+    LitVisionTransformer | LitCobra,
     DataLoader[tuple[Bags, CoordinatesBatch, BagSizes, EncodedTargets]],
     DataLoader[tuple[Bags, CoordinatesBatch, BagSizes, EncodedTargets]],
 ]:
@@ -279,24 +298,68 @@ def setup_model_for_training(
             f"some categories do not have enough samples to meaningfully train a model: {underpopulated_categories}"
         )
 
-    # Train the model
-    model = LitVisionTransformer(
-        categories=train_categories,
-        category_weights=category_weights,
-        dim_input=dim_feats,
-        dim_model=512,
-        dim_feedforward=2048,
-        n_heads=8,
-        n_layers=2,
-        dropout=0.25,
-        use_alibi=use_alibi,
-        # Metadata, has no effect on model training
-        ground_truth_label=ground_truth_label,
-        train_patients=train_patients,
-        valid_patients=valid_patients,
-        clini_table=clini_table,
-        slide_table=slide_table,
-        feature_dir=feature_dir,
-    )
+    if use_cobra:
+        model = LitCobra(
+            categories=train_categories,
+            category_weights=category_weights,
+            #dim_input=dim_feats,
+            #dim_model=512,
+            #dim_feedforward=2048,
+            #n_heads=8,
+            #n_layers=2,
+            dropout=0.25,
+            #use_alibi=use_alibi,
+            # Metadata, has no effect on model training
+            feat_dim=dim_feats,
+            lr=lr,
+            freeze_base=freeze_base,
+            freeze_cobra=freeze_cobra,
+            ground_truth_label=ground_truth_label,
+            train_patients=train_patients,
+            valid_patients=valid_patients,
+            clini_table=clini_table,
+            slide_table=slide_table,
+            feature_dir=feature_dir,
+        )
+    else:
+        model = LitVisionTransformer(
+            categories=train_categories,
+            category_weights=category_weights,
+            dim_input=dim_feats,
+            dim_model=512,
+            dim_feedforward=2048,
+            n_heads=8,
+            n_layers=2,
+            dropout=0.25,
+            use_alibi=use_alibi,
+            lr=lr,
+            # Metadata, has no effect on model training
+            ground_truth_label=ground_truth_label,
+            train_patients=train_patients,
+            valid_patients=valid_patients,
+            clini_table=clini_table,
+            slide_table=slide_table,
+            feature_dir=feature_dir,
+        )
+
+    # # Train the model
+    # model = LitVisionTransformer(
+    #     categories=train_categories,
+    #     category_weights=category_weights,
+    #     dim_input=dim_feats,
+    #     dim_model=512,
+    #     dim_feedforward=2048,
+    #     n_heads=8,
+    #     n_layers=2,
+    #     dropout=0.25,
+    #     use_alibi=use_alibi,
+    #     # Metadata, has no effect on model training
+    #     ground_truth_label=ground_truth_label,
+    #     train_patients=train_patients,
+    #     valid_patients=valid_patients,
+    #     clini_table=clini_table,
+    #     slide_table=slide_table,
+    #     feature_dir=feature_dir,
+    # )
 
     return model, train_dl, valid_dl

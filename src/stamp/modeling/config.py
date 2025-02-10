@@ -27,20 +27,24 @@ class TrainConfig(BaseModel):
     filename_label: PandasLabel = "FILENAME"
 
     # Dataset and -loader parameters
-    bag_size: int = 512
-    num_workers: int = min(os.cpu_count() or 1, 16)
+    bag_size: int = 1024
+    num_workers: int = min(os.cpu_count() or 1, 8)
 
     # Training paramenters
     batch_size: int = 64
     max_epochs: int = 64
     patience: int = 16
     accelerator: str = "gpu" if torch.cuda.is_available() else "cpu"
-
+    lr: float = 1e-4
+    freeze_base: bool = True
+    freeze_cobra: bool = False
+    
     # Experimental features
     use_vary_precision_transform: bool = False
     use_alibi: bool = False
+    use_cobra: bool = False
 
-
+    
 class CrossvalConfig(TrainConfig):
     n_splits: int = Field(5, ge=2)
 
@@ -61,3 +65,4 @@ class DeploymentConfig(BaseModel):
 
     num_workers: int = min(os.cpu_count() or 1, 16)
     accelerator: str = "gpu" if torch.cuda.is_available() else "cpu"
+    use_cobra: bool = False
